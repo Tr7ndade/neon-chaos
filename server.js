@@ -58,6 +58,7 @@ io.on('connection', (socket) => {
     r.emitRoom();
   });
 
+  socket.on('rounds', (n) => { if (room && me) { room.setRounds(me.id, Number(n)); room.emitRoom(); } });
   socket.on('avatar', (a) => { if (room && me) { room.setAvatar(me.id, Number(a)); room.emitRoom(); } });
   socket.on('start', () => { if (room && me) room.start(me.id); });
   socket.on('again', () => { if (room && me) room.again(me.id); });

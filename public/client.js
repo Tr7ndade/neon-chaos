@@ -13,7 +13,7 @@ let bestRtt = 1e9, ping = 0;
 let snaps = [];
 let lastPhaseKey = '';
 let lastLit = -1;
-let camX = 0;
+let camX = 0, camY = 0, camInit = false, lastScT = 0;
 
 // ---------- Som ----------
 const Sfx = {
@@ -137,7 +137,7 @@ socket.on('room', (st) => {
   if (changed) {
     if (st.phase === 'intro') { snaps = []; renderIntro(); Sfx.whoosh(); }
     $('#game').classList.toggle('memory', st.phase === 'play' && st.cur && st.cur.game === 'memory');
-    if (st.phase === 'play') { snaps = []; lastLit = -1; camX = 0; R.local.padFlash = [0, 0, 0, 0]; renderHudStatic(); }
+    if (st.phase === 'play') { snaps = []; lastLit = -1; camX = 0; camY = 0; camInit = false; $('#hudGameSc').innerHTML = ''; R.local.padFlash = [0, 0, 0, 0]; renderHudStatic(); }
     if (st.phase === 'results') renderResults();
     if (st.phase === 'podium') { renderPodium(); Sfx.win(); }
   } else if (st.phase === 'podium') renderPodiumButtons();
@@ -176,6 +176,14 @@ function renderLobby() {
     pick.appendChild(b);
   });
   const host = ST.hostId === myId, n = ST.players.length;
+  const rp = $('#roundPick'); rp.innerHTML = '<div class="round">RODADAS</div>';
+  const row = el('div', 'rpick');
+  NC.ROUND_OPTIONS.forEach((k) => {
+    const b = el('button', 'rp' + (ST.rounds === k ? ' on' : ''), `<b>${k}</b><small>~${Math.round(k * 2.6)} min</small>`);
+    b.disabled = !host; b.onclick = () => socket.emit('rounds', k);
+    row.appendChild(b);
+  });
+  rp.appendChild(row);
   $('#btnStart').classList.toggle('hidden', !host);
   $('#btnStart').disabled = n < MIN_PLAYERS;
   $('#lobbyInfo').innerHTML = `${n}/${MAX_PLAYERS} jogadores · ideal: 5 ou 6. ` +
@@ -345,6 +353,19 @@ function renderScores() {
   });
 }
 
+function renderGameScore(sc, game) {
+  const byN = pByN(), my = me(), unit = (GAMES[game] && GAMES[game].unit) || '';
+  const rows = sc.slice().sort((a, b) => b[1] - a[1]);
+  const top = rows.slice(0, 4);
+  const mi = rows.findIndex((r) => my && r[0] === my.n);
+  if (mi >= 4) top.push(rows[mi]);
+  $('#hudGameSc').innerHTML = `<div class="gsh">${GAMES[game].name}</div>` + top.map((r) => {
+    const p = byN[r[0]]; if (!p) return '';
+    const v = unit === 's' ? r[1].toFixed(1) : Math.floor(r[1]);
+    return `<div class="gsr${my && p.id === my.id ? ' me' : ''}"><span>${rows.indexOf(r) + 1}º</span><b style="color:${p.color}">${esc(p.name)}</b><i>${v} ${unit}</i></div>`;
+  }).join('');
+}
+
 // ---------- Entrada (teclado e mouse) ----------
 const keys = { u: false, d: false, l: false, r: false };
 const KEYMAP = { KeyW: 'u', ArrowUp: 'u', KeyS: 'd', ArrowDown: 'd', KeyA: 'l', ArrowLeft: 'l', KeyD: 'r', ArrowRight: 'r' };
@@ -400,13 +421,13 @@ function handleEvent(ev) {
   const at = ev.x != null ? { x: ev.x, y: ev.y } : posOf(ev.n);
   switch (ev.k) {
     case 'zap': R.burst(at.x, at.y, '#ff2e55', 22, 300); if (isMe) { R.shake(10); R.text(at.x, at.y - 30, 'ZAP!', '#ff2e55'); } Sfx.zap(); break;
-    case 'finish': R.text(at.x - 60, at.y - 30, `${ev.place}º!`, col, 34); R.burst(at.x, at.y, col, 30, 300); if (isMe) Sfx.finish(); else Sfx.beep(false); break;
-    case 'fall': R.burst(at.x, at.y, col, 26, 200, 5, 1); R.ring(at.x, at.y, col, 90); if (isMe) { R.text(at.x, at.y - 30, 'CAIU!', '#ff2e55'); R.shake(8); } Sfx.fall(); break;
+    case 'finish': R.text(at.x - (ST.cur.game === 'dungeon' ? 0 : 60), at.y - 30, `${ev.place}º!`, col, 34); R.burst(at.x, at.y, col, 30, 300); if (isMe) Sfx.finish(); else Sfx.beep(false); break;
+    case 'fall': R.fall(at.x, at.y - 20, col, P ? P.avatar : 0, 16); R.burst(at.x, at.y, col, 26, 200, 5, 1); R.ring(at.x, at.y, col, 90); if (isMe) { R.text(at.x, at.y - 30, 'CAIU!', '#ff2e55'); R.shake(8); } Sfx.fall(); break;
     case 'jump': if (isMe) Sfx.jump(); break;
     case 'dash': if (isMe) Sfx.dash(); break;
     case 'bump': R.ring(at.x, at.y, '#fff', 60); Sfx.bump(); R.shake(4); break;
     case 'ko': {
-      R.burst(at.x, at.y, col, 40, 380, 6, 1); R.shake(12); R.text(at.x, at.y - 20, 'KO!', '#ff2e55', 38); Sfx.ko();
+      R.fall(at.x, at.y - 20, col, P ? P.avatar : 0, 16); R.burst(at.x, at.y, col, 40, 380, 6, 1); R.kick(0.03); R.shake(12); R.text(at.x, at.y - 20, 'KO!', '#ff2e55', 38); Sfx.ko();
       if (my && ev.by === my.n) R.text(at.x, at.y + 30, '+20', '#c8ff3d', 28);
       break;
     }
@@ -415,15 +436,38 @@ function handleEvent(ev) {
     case 'memfail': if (isMe) { Sfx.fail(); R.text(640, 560, 'ERROU!', '#ff2e55', 34); R.shake(8); } break;
     case 'turbo': R.burst(at.x, at.y, '#22e4ff', 20, 250); if (isMe) Sfx.whoosh(); break;
     case 'item':
-      if (isMe) { Sfx.item(); R.text(at.x, at.y - 30, { turbo: '⚡ TURBO', mina: '💣 MINA', choque: '⚡ CHOQUE' }[ev.item], '#22e4ff', 22); }
+      if (isMe) { Sfx.item(); R.text(at.x, at.y - 30, { turbo: '⚡ TURBO', mina: '💣 MINA', choque: '⚡ CHOQUE', orb: '⚡ ENERGIA! LEVE AO TITÃ' }[ev.item] || '', '#22e4ff', 22); }
       break;
     case 'mine': if (isMe) Sfx.bump(); break;
     case 'shock': R.ring(at.x, at.y, '#22e4ff', 240); R.burst(at.x, at.y, '#22e4ff', 30, 400); Sfx.zap(); R.shake(6); break;
     case 'pass': R.ring(at.x, at.y, '#ff2e55', 70); R.text(at.x, at.y - 34, 'PASSOU!', '#ff2e55', 22); Sfx.pass(); break;
     case 'newbomb': R.text(at.x, at.y - 40, isMe ? 'A BOMBA É SUA!' : 'BOMBA!', '#ff2e55', isMe ? 30 : 22); Sfx.pass(); break;
+    case 'spike': R.burst(at.x, at.y, '#ff2e55', 16, 220); if (isMe) { R.shake(8); R.text(at.x, at.y - 40, 'AI!', '#ff2e55'); } Sfx.zap(); break;
+    case 'mimic': R.burst(at.x, at.y, '#ff5ce1', 30, 300); R.text(at.x, at.y - 40, 'MÍMICO!', '#ff5ce1', 30); R.shake(10); Sfx.ko(); break;
+    case 'chest': R.burst(at.x, at.y - 20, '#ffd23f', 34, 300, 5, 0.9, 200); R.text(at.x, at.y - 50, `+${ev.v}`, '#ffd23f', 30); if (isMe) Sfx.finish(); else Sfx.item(); break;
+    case 'coin': if (isMe) Sfx.tone(1500, 0.06, 'square', 0.03); break;
+    case 'burn': R.fall(at.x, at.y - 20, col, P ? P.avatar : 0, 16); R.burst(at.x, at.y, '#ff6a00', 40, 320, 5, 1, 150); R.text(at.x, at.y - 40, ev.why === 'lava' ? 'DERRETEU!' : 'CAIU NA LAVA!', '#ff6a00', 26); if (isMe) { R.shake(14); R.flash(0.4); } Sfx.boom(); break;
+    case 'rock': R.burst(at.x, at.y, '#ff9f1c', 26, 280, 5, 0.8, 180); R.ring(at.x, at.y, '#ff6a00', 80); R.shake(6); Sfx.bump(); break;
+    case 'hurt': R.burst(at.x, at.y - 20, '#ff5ce1', 16, 220); if (isMe) { R.shake(8); R.flash(0.25); } Sfx.zap(); break;
+    case 'bosshit': R.burst(640, 330, '#22e4ff', 40, 420); R.ring(640, 340, '#22e4ff', 140); R.text(at.x, at.y - 40, '-1 HP', '#22e4ff', 26); R.shake(8); R.kick(0.03); Sfx.ko(); break;
+    case 'bossdown': R.burst(640, 330, '#ff2e55', 120, 600, 7, 1.4, 100); R.burst(640, 330, '#ffd23f', 80, 500, 6, 1.2); R.ring(640, 340, '#fff', 400); R.shake(30); R.flash(0.8); R.kick(0.08); R.text(640, 260, 'TITÃ DERROTADO!', '#ffd23f', 44); Sfx.boom(); break;
+    case 'key': R.burst(at.x, at.y - 30, '#ffd23f', 20, 200); if (isMe) { Sfx.item(); R.text(at.x, at.y - 60, 'CHAVE! VÁ AO PORTAL', '#ffd23f', 22); } break;
+    case 'steal': R.ring(at.x, at.y, '#ff5ce1', 70); R.text(at.x, at.y - 50, 'ROUBOU!', '#ff5ce1', 24); Sfx.pass(); R.shake(4); break;
+    case 'mob': R.burst(at.x, at.y - 20, '#ff2e55', 20, 240); if (isMe) { R.shake(10); R.flash(0.3); R.text(at.x, at.y - 50, 'PEGO!', '#ff2e55'); } Sfx.ko(); break;
+    case 'crown': R.burst(at.x, at.y - 40, '#ffd23f', 24, 220); R.text(at.x, at.y - 60, isMe ? 'A COROA É SUA!' : '👑', '#ffd23f', 24); Sfx.item(); break;
+    case 'shot': if (isMe) Sfx.tone(900, 0.06, 'square', 0.025, 0, 300); break;
+    case 'shipboom': R.burst(at.x, at.y, col, 40, 380, 5, 1); R.burst(at.x, at.y, '#ffd23f', 20, 300); R.ring(at.x, at.y, col, 110); if (isMe) { R.shake(14); R.flash(0.3); } Sfx.boom(); if (my && ev.by === my.n) R.text(at.x, at.y - 30, '+3', '#c8ff3d', 30); break;
+    case 'rockhit': R.burst(at.x, at.y, '#b84dff', Math.min(30, ev.r), 200 + ev.r * 3); if (my && ev.n === my.n) { R.text(at.x, at.y - 20, '+1', '#c8ff3d', 22); Sfx.bump(); } break;
+    case 'carhit': R.burst(at.x, at.y, col, 24, 300); R.text(at.x, at.y - 40, 'ATROPELADO!', '#ff9f1c', 22); if (isMe) { R.shake(12); R.flash(0.3); } Sfx.ko(); break;
+    case 'splash': R.fall(at.x, at.y - 20, col, P ? P.avatar : 0, 16); R.burst(at.x, at.y, '#22e4ff', 24, 200); if (isMe) R.text(at.x, at.y - 40, 'CAIU NO RIO!', '#22e4ff', 22); Sfx.fall(); break;
+    case 'cross': R.burst(at.x, at.y, '#ffd23f', 40, 320, 5, 1, 150); R.text(at.x, at.y + 40, '+1 TRAVESSIA', '#ffd23f', 26); if (isMe) Sfx.finish(); break;
+    case 'infect': R.burst(at.x, at.y - 20, '#3dff8a', 30, 300); R.ring(at.x, at.y, '#3dff8a', 90); R.text(at.x, at.y - 50, isMe ? 'VOCÊ FOI INFECTADO!' : 'INFECTADO!', '#3dff8a', isMe ? 26 : 20); if (isMe) R.flash(0.3); Sfx.ko(); break;
+    case 'bank': R.burst(at.x, at.y, '#ffd23f', 30, 260, 5, 0.9, 120); R.text(at.x, at.y - 30, `+${ev.v}`, '#ffd23f', 30); if (isMe) Sfx.finish(); break;
+    case 'bignugget': R.text(640, 300, 'PEPITA GIGANTE NO CENTRO!', '#ffd23f', 30); Sfx.item(); break;
+    case 'paintbomb': R.burst(at.x, at.y, col, 60, 420, 7, 1); R.ring(at.x, at.y, col, 150); R.shake(6); Sfx.boom(); break;
     case 'boom':
       if (ev.small) { R.burst(at.x, at.y, '#ff9f1c', 26, 280); R.ring(at.x, at.y, '#ff2e55', 80); Sfx.ko(); R.shake(6); }
-      else { R.burst(at.x, at.y, '#ff2e55', 70, 520, 7, 1.2); R.burst(at.x, at.y, '#ffd23f', 40, 380, 5, 1); R.ring(at.x, at.y, '#ff9f1c', 260); R.shake(22); Sfx.boom(); if (isMe) R.text(at.x, at.y - 40, 'BOOM! VOCÊ ESTÁ FORA', '#ff2e55', 26); }
+      else { R.flash(0.35); R.kick(0.05); R.burst(at.x, at.y, '#ff2e55', 70, 520, 7, 1.2); R.burst(at.x, at.y, '#ffd23f', 40, 380, 5, 1); R.ring(at.x, at.y, '#ff9f1c', 260); R.shake(22); Sfx.boom(); if (isMe) R.text(at.x, at.y - 40, 'BOOM! VOCÊ ESTÁ FORA', '#ff2e55', 26); }
       break;
   }
 }
@@ -441,7 +485,7 @@ function interp() {
   const players = b.p.map((q) => {
     const o = am[q[0]] || q, info = byN[q[0]] || { name: '?', color: '#fff', avatar: 0 };
     const x = o[1] + (q[1] - o[1]) * k, y = o[2] + (q[2] - o[2]) * k;
-    return { n: q[0], x, y, r: q[3], f: k < 0.5 ? o[4] : q[4], vx: ((q[1] - o[1]) / span) * 1000, vy: ((q[2] - o[2]) / span) * 1000, name: info.name, color: info.color, avatar: info.avatar, me: my && info.id === my.id };
+    return { n: q[0], x, y, r: q[3], f: k < 0.5 ? o[4] : q[4], a: q[5], vx: ((q[1] - o[1]) / span) * 1000, vy: ((q[2] - o[2]) / span) * 1000, name: info.name, color: info.color, avatar: info.avatar, me: my && info.id === my.id };
   });
   return { gt: a.gt + (b.gt - a.gt) * k, players, x: b.x, latest: snaps[snaps.length - 1] };
 }
@@ -452,17 +496,26 @@ function loop(t) {
     const it = ST.phase === 'play' ? interp() : null;
     const init = ST.init || {};
     const v = { game: ST.phase === 'play' ? ST.cur.game : null, init, mods: ST.cur ? ST.cur.mods : [], gt: it ? it.gt : t / 1000, players: it ? it.players : [], x: it ? it.x : null, byN: pByN(), cam: 0 };
+    if (it) {
+      const world = init.world || (v.game === 'race' ? { w: init.len, h: 720 } : null);
+      if (world) {
+        const alive = it.players.filter((p) => p.f & 1);
+        let fp = it.players.find((p) => p.me && (p.f & 1) && !(p.f & 16));
+        if (!fp) fp = alive.sort((a, b) => b.x - a.x)[0] || it.players[0];
+        const tx = Math.max(0, Math.min(world.w - 1280, (fp ? fp.x : 0) - (v.game === 'race' || v.game === 'lava' ? 420 : 640)));
+        const ty = Math.max(0, Math.min(world.h - 720, (fp ? fp.y : 0) - 360));
+        if (!camInit) { camX = tx; camY = ty; camInit = true; }
+        camX += (tx - camX) * Math.min(1, dt * 6); camY += (ty - camY) * Math.min(1, dt * 6);
+        v.cam = { x: camX, y: camY };
+      }
+    }
     if (it && v.game === 'race') {
-      const mp = it.players.find((p) => p.me) || it.players[0];
-      const target = Math.max(0, Math.min((init.len || 1280) - 1280, (mp ? mp.x : 0) - 420));
-      camX += (target - camX) * Math.min(1, dt * 6);
-      v.cam = camX;
       const mine = it.x && it.x.items && it.x.items.find((q) => me() && q[0] === me().n);
       const slot = $('#hudItem');
       if (mine && mine[1]) { slot.classList.remove('hidden'); slot.innerHTML = `${{ turbo: '⚡ TURBO', mina: '💣 MINA', choque: '🌀 CHOQUE' }[mine[1]]} <small>ESPAÇO para usar</small>`; }
       else slot.classList.add('hidden');
     }
-    if (it && v.game === 'bomb') v.extraFor = (p) => ({ bomb: it.x.h === p.n, holder: it.x.h === p.n, heat: it.x.heat || 0 });
+    if (it && it.x && it.x.sc && t - lastScT > 250) { lastScT = t; renderGameScore(it.x.sc, v.game); }
     if (it && v.game === 'memory' && it.latest.x) {
       const lit = it.latest.x.lit;
       if (lit !== lastLit) { lastLit = lit; if (lit >= 0) Sfx.pad(lit % 10); }
@@ -479,4 +532,5 @@ function loop(t) {
   requestAnimationFrame(loop);
 }
 R.setup($('#cv'));
+$('#btnQual').onclick = () => { R.setQuality(!R.Q.hi); toast(R.Q.hi ? '✨ Gráficos: alta qualidade' : '⚡ Gráficos: modo leve'); };
 requestAnimationFrame(loop);

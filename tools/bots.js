@@ -44,6 +44,7 @@ function mk(i) {
 (async () => {
   for (let i = 0; i < N; i++) await mk(i);
   console.log('Sala', code);
-  bots[0].s.emit('start');
+  if (process.argv[5]) bots[0].s.emit('rounds', Number(process.argv[5]));
+  setTimeout(() => bots[0].s.emit('start'), 300);
   setTimeout(() => { console.log('TEMPO ESGOTADO, rodadas:', rounds); process.exit(1); }, Number(process.argv[4] || 600000));
 })();

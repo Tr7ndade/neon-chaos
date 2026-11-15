@@ -94,6 +94,24 @@ class BaseGame {
     if (p.y < y0 + p.r) { p.y = y0 + p.r; p.vy = Math.abs(p.vy) * 0.3; }
     if (p.y > y1 - p.r) { p.y = y1 - p.r; p.vy = -Math.abs(p.vy) * 0.3; }
   }
+  collideRects(p, rects) {
+    for (const w of rects) {
+      const nx = clamp(p.x, w[0], w[0] + w[2]), ny = clamp(p.y, w[1], w[1] + w[3]);
+      let dx = p.x - nx, dy = p.y - ny, d = Math.hypot(dx, dy);
+      if (d < p.r) {
+        if (d < 0.01) { dx = 0; dy = p.y < w[1] + w[3] / 2 ? -1 : 1; d = 1; }
+        p.x = nx + (dx / d) * p.r; p.y = ny + (dy / d) * p.r;
+        const vn = p.vx * (dx / d) + p.vy * (dy / d);
+        if (vn < 0) { p.vx -= vn * (dx / d); p.vy -= vn * (dy / d); }
+      }
+    }
+  }
+  collideCircles(p, circles) {
+    for (const [cx, cy, r] of circles) {
+      const dx = p.x - cx, dy = p.y - cy, d = Math.hypot(dx, dy) || 1;
+      if (d < r + p.r) { p.x = cx + (dx / d) * (r + p.r); p.y = cy + (dy / d) * (r + p.r); }
+    }
+  }
   // empurra jogadores que se sobrepõem; devolve pares que colidiram
   separate(filter = (p) => p.alive) {
     const ps = this.list().filter(filter), hits = [];
@@ -585,4 +603,4 @@ class HotBomb extends BaseGame {
 }
 
 const GAME_CLASSES = { laser: LaserRun, floor: LastFloor, knockout: Knockout, memory: MemoryGlitch, race: NeonRace, bomb: HotBomb };
-module.exports = { GAME_CLASSES };
+module.exports = { GAME_CLASSES, BaseGame, rng, clamp, rankGroups, segDist };

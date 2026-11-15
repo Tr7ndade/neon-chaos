@@ -1,6 +1,8 @@
 // Sala + torneio: lobby → 5 rodadas (apresentação, jogo, resultado) → pódio.
-const { GAMES, MODS, TABLE, ROUNDS, COLORS, AVATARS, ACHIEVEMENTS, ACH_BONUS, MIN_PLAYERS, MAX_PLAYERS } = require('./public/shared');
-const { GAME_CLASSES } = require('./games');
+const { GAMES, MODS, TABLE, ROUND_OPTIONS, ROUND_TIME, FINAL_TIME, COLORS, AVATARS, ACHIEVEMENTS, ACH_BONUS, MIN_PLAYERS, MAX_PLAYERS } = require('./public/shared');
+const { GAME_CLASSES: G1 } = require('./games');
+const { GAME_CLASSES2: G2 } = require('./games2');
+const GAME_CLASSES = { ...G1, ...G2 };
 
 const TICK_HZ = 60;
 const SPEED = Number(process.env.NC_SPEED || 1); // só para testes
@@ -27,6 +29,7 @@ class Room {
     this.tickN = 0;
     this.lastActive = Date.now();
     this.chat = [];
+    this.rounds = 5;
   }
 
   player(id) { return this.players.find((p) => p.id === id); }
@@ -48,6 +51,9 @@ class Room {
     this.players = this.players.filter((p) => p.id !== id);
     if (this.hostId === id) this.hostId = this.players[0] ? this.players[0].id : null;
   }
+  setRounds(id, n) {
+    if (id === this.hostId && this.phase === 'lobby' && ROUND_OPTIONS.includes(n)) this.rounds = n;
+  }
   setAvatar(id, a) {
     const p = this.player(id);
     if (p && this.phase === 'lobby' && Number.isInteger(a) && a >= 0 && a < AVATARS.length) p.avatar = a;
@@ -62,21 +68,22 @@ class Room {
   start(byId) {
     if (byId !== this.hostId || this.phase !== 'lobby' || this.players.length < MIN_PLAYERS) return;
     this.players.forEach((p) => { p.score = 0; p.stats = {}; p.streak = 0; });
-    const used = new Set();
+    const N = this.rounds;
     const modKeys = Object.keys(MODS);
-    this.plan = ROUNDS.map((r) => {
-      const pool = r.pool.filter((g) => !used.has(g));
-      const all = Object.keys(GAMES).filter((g) => !used.has(g));
-      const game = shuffle(pool.length ? pool : all)[0];
-      used.add(game);
-      const ok = modKeys.filter((m) => !(game === 'memory' && MODS[m].movement));
+    const games = shuffle(Object.keys(GAMES)).slice(0, N);
+    const special = N >= 3 ? 1 + Math.floor(Math.random() * (N - 2)) : -1; // rodada com 2 eventos
+    this.plan = games.map((game, i) => {
+      const final = i === N - 1, first = i === 0;
+      const nMods = first || final ? 0 : i === special ? 2 : 1;
+      const ok = modKeys.filter((m) => !(game === 'memory' && MODS[m].movement) && !(game === 'dungeon' && m === 'apagao'));
       const mods = [];
       for (const m of shuffle(ok.slice())) {
-        if (mods.length >= r.mods) break;
+        if (mods.length >= nMods) break;
         if ((m === 'gigantes' && mods.includes('nanicos')) || (m === 'nanicos' && mods.includes('gigantes'))) continue;
         mods.push(m);
       }
-      return { game, mods, final: !!r.final, time: r.time, label: r.label };
+      const label = first ? 'Aquecimento' : final ? 'FINAL · pontos em dobro' : i === special ? 'Evento especial' : `Rodada ${i + 1}`;
+      return { game, mods, final, time: final ? FINAL_TIME : ROUND_TIME, label };
     });
     // ganchos de teste (variáveis de ambiente); em produção não são usados
     if (process.env.NC_ORDER) process.env.NC_ORDER.split(',').forEach((g, i) => { if (this.plan[i] && GAMES[g]) this.plan[i].game = g; });
@@ -252,7 +259,7 @@ class Room {
   state() {
     const r = this.plan[this.round];
     return {
-      code: this.code, hostId: this.hostId, phase: this.phase, round: this.round, total: ROUNDS.length,
+      code: this.code, hostId: this.hostId, phase: this.phase, round: this.round, total: this.plan.length || this.rounds, rounds: this.rounds,
       now: Date.now(), phaseEnd: this.phaseEnd,
       players: this.players.map(({ id, n, name, color, avatar, score, connected }) => ({ id, n, name, color, avatar, score, connected })),
       cur: r ? { game: r.game, mods: r.mods, final: r.final, label: r.label } : null,

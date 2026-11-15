@@ -15,7 +15,7 @@
   <section id="home" class="screen">
     <div class="panel home">
       <h1 class="logo glitch" data-t="NEON CHAOS">NEON CHAOS</h1>
-      <p class="tag">Torneio de minigames · 5 a 6 jogadores · ~15 minutos</p>
+      <p class="tag">16 minigames · 5 a 6 jogadores · 5, 7 ou 10 rodadas</p>
       <label>Apelido <input id="name" maxlength="14" placeholder="Ex.: Trindade" autocomplete="nickname"></label>
       <button id="btnCreate" class="primary big">Criar sala</button>
       <div class="or"><span>ou entre numa sala</span></div>
@@ -25,7 +25,7 @@
       </div>
       <p id="homeErr" class="err"></p>
       <div class="games-strip">
-        <span>LASER RUN</span><span>LAST FLOOR</span><span>KNOCKOUT</span><span>MEMORY GLITCH</span><span>NEON RACE</span><span>HOT BOMB</span>
+        <span>LASER RUN</span><span>LAST FLOOR</span><span>KNOCKOUT</span><span>MEMORY GLITCH</span><span>NEON RACE</span><span>HOT BOMB</span><span>TESOURO PERDIDO</span><span>FUGA DA LAVA</span><span>CHEFÃO TITÃ</span><span>MASMORRA</span><span>COROA DO REI</span><span>GUERRA DE NAVES</span><span>TRAVESSIA NEON</span><span>VÍRUS</span><span>CORRIDA DO OURO</span><span>TERRITÓRIO</span>
       </div>
     </div>
   </section>
@@ -37,6 +37,7 @@
         <div id="lobbyCode" class="code"></div>
         <button id="btnCopy">🔗 Copiar link de convite</button>
         <div id="lobbyPlayers" class="slots"></div>
+        <div id="roundPick"></div>
         <p id="lobbyInfo" class="muted"></p>
         <button id="btnStart" class="primary big">▶ Iniciar torneio</button>
         <div class="row"><button class="ghost btnLeave">Sair da sala</button><button class="ghost btnSound"></button></div>
@@ -46,7 +47,7 @@
         <div id="avatarPick"></div>
         <div class="round" style="margin-top:8px">COMO FUNCIONA</div>
         <ul class="how">
-          <li>5 rodadas, cada uma com um minigame diferente.</li>
+          <li>O anfitrião escolhe 5, 7 ou 10 rodadas, sorteadas entre 16 minigames.</li>
           <li>Eventos aleatórios mudam as regras entre as rodadas.</li>
           <li>Pontos: 100 · 75 · 50 · 35 · 20 · 10. A final vale <b>o dobro</b>.</li>
           <li>Controles: <b>WASD/setas</b> movem, <b>ESPAÇO</b> é a ação.</li>
@@ -62,11 +63,12 @@
       <div class="hud-top">
         <div class="hud-l"><div id="hudRound"></div><div id="hudGame"></div></div>
         <div id="hudTimer">0:00</div>
-        <div class="hud-r"><div id="hudInfo"></div><div id="hudRank"></div><div class="pingrow"><span id="ping">— ms</span><button class="ghost btnSound small"></button></div></div>
+        <div class="hud-r"><div id="hudInfo"></div><div id="hudRank"></div><div class="pingrow"><span id="ping">— ms</span><button class="ghost small" id="btnQual" title="Qualidade gráfica">✨</button><button class="ghost btnSound small"></button></div></div>
       </div>
       <div id="hudMods"></div>
       <div id="hudItem" class="hidden"></div>
       <div id="hudHelp"></div>
+      <div id="hudGameSc"></div>
     </div>
     <div id="hudScores"></div>
     <div id="intro" class="overlay hidden"></div>
@@ -78,6 +80,7 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="shared.js"></script>
+  <script src="avatars.js"></script>
   <script src="render.js"></script>
   <script src="client.js"></script>
 </body>
